@@ -8,7 +8,7 @@ Stack: **Next.js (App Router) + PostgreSQL** (via `pg`, sem ORM pesado). Sem exi
 
 - Página pública de votação com tier list (`S+ S A B C D`), drag-and-drop no desktop e seletor por toque no mobile.
 - Identificação obrigatória (nome ou nick + e-mail) antes de votar.
-- Cálculo automático de pontuação/tier por streamer, com fórmula e faixas exatamente como especificado.
+- Cálculo automático de tier por streamer: o tier é o que recebeu mais votos individuais (moda), não a média — assim poucos votos extremos não superam quem tem muito mais votos.
 - Página de resultados ("Ranking da comunidade") **visível apenas para o admin** — usuários comuns não veem o resultado em tempo real.
 - Painel admin (senha única) com: criar votação/temporada, cadastrar/editar/excluir streamer (com upload de foto), abrir/fechar votação, zerar votos, ver total de participantes e avaliações, lista de participantes (nome + e-mail), trocar a senha.
 - Anti-voto-duplicado: cookie `httpOnly` de identificação do votante + restrição no banco (`UNIQUE(ranking_id, streamer_id, voter_id)`) — a pessoa pode reenviar/ajustar seu próprio voto, mas não consegue votar duas vezes "como pessoas diferentes" no mesmo streamer usando o mesmo navegador.
@@ -77,7 +77,11 @@ Isso cria a senha de admin, os 12 streamers iniciais e a votação "Ranking PvP 
 
 ## Onde cada regra do briefing foi implementada
 
-- **Pontuação**: `src/lib/scoring.js` (`TIER_SCORE`, `tierFromAvg`) — mesmas faixas do briefing (5,50–6,00 = S+, etc.), com a média numérica guardada para desempate.
+- **Pontuação**: `src/lib/scoring.js` (`computeStats`, `tierFromVotes`, `tierFromAvg`). A tela de resultados (pública/admin e o painel admin) tem duas visualizações alternáveis por um botão no topo:
+  - **Por tier mais votado** (padrão): o tier de cada streamer é o que recebeu mais votos individuais (moda) — não a média — para que poucos votos extremos não superem streamers com muito mais votos. Em empate no número de votos, vence o tier mais alto. Ordem dentro do tier (`compareByVotes`): quantidade de votos naquele tier → total de votos → média → nome.
+  - **Por média**: o critério original do briefing, por faixa de nota (5,50–6,00 = S+, etc., ver `tierFromAvg`). Ordem dentro do tier (`compareByAvg`): média → total de votos → nome.
+
+  As duas visualizações usam os mesmos votos já registrados — trocar de visualização só recalcula a exibição, não altera nem descarta nenhum voto.
 - **Um voto por streamer por pessoa**: índice único `UNIQUE(ranking_id, streamer_id, voter_id)` em `db/schema.sql`, upsert em `src/lib/repo.js#submitVotes`.
 - **Identificação anônima do votante**: cookie `httpOnly` `arc_voter_id` (1 ano de validade), setado em `src/app/api/vote/route.js`. Nome/e-mail informados pela pessoa ficam salvos na tabela `voters` — não são verificados/autenticados, é uma identificação por honestidade, não uma prova criptográfica.
 - **Resultados só para admin**: checado no servidor em `src/app/ranking/[slug]/resultados/page.js` e na própria API (`src/app/api/rankings/[slug]/results/route.js`), então mesmo chamando a API diretamente sem estar logado como admin, a resposta vem bloqueada (403).
