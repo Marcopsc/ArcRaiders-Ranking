@@ -20,6 +20,40 @@ export function tierFromAvg(avg) {
   return "D";
 }
 
+/**
+ * Tier de um streamer = o tier que recebeu mais votos individuais (moda),
+ * não a média. Isso evita que poucos votos extremos (ex: 3 votos S+)
+ * superem streamers com muito mais votos espalhados entre tiers próximos.
+ * Em caso de empate no número de votos entre dois ou mais tiers, prevalece
+ * o tier mais alto (TIERS já está ordenado de S+ a D).
+ */
+export function tierFromVotes(distCount) {
+  let best = null;
+  let bestCount = -1;
+  TIERS.forEach((t) => {
+    const c = distCount[t] || 0;
+    if (c > bestCount) {
+      best = t;
+      bestCount = c;
+    }
+  });
+  return best;
+}
+
+/**
+ * Ordena duas linhas de estatística dentro do mesmo tier: primeiro por
+ * quantidade de votos QUE O STREAMER RECEBEU NAQUELE TIER (o critério
+ * "mais justo" pedido — quem tem mais gente confirmando aquele tier fica
+ * na frente), depois por total de votos geral, depois pela média, e por
+ * fim por nome, para desempate determinístico.
+ */
+export function compareStatsRows(a, b) {
+  if (b.tierVotes !== a.tierVotes) return b.tierVotes - a.tierVotes;
+  if (b.count !== a.count) return b.count - a.count;
+  if (b.avg !== a.avg) return b.avg - a.avg;
+  return (a.streamer?.nickname || "").localeCompare(b.streamer?.nickname || "", "pt-BR");
+}
+
 export function isValidTier(t) {
   return TIERS.indexOf(t) !== -1;
 }
@@ -43,15 +77,21 @@ export function computeStats(streamers, votes) {
     const total = sv.reduce((a, v) => a + v.score, 0);
     const avg = count ? total / count : 0;
     const dist = {};
+    const distCount = {};
     TIERS.forEach((t) => {
-      dist[t] = count ? Math.round((sv.filter((v) => v.tier === t).length / count) * 100) : 0;
+      const c = sv.filter((v) => v.tier === t).length;
+      distCount[t] = c;
+      dist[t] = count ? Math.round((c / count) * 100) : 0;
     });
+    const tier = count ? tierFromVotes(distCount) : null;
     return {
       streamer,
       count,
       avg,
-      tier: count ? tierFromAvg(avg) : null,
+      tier,
+      tierVotes: tier ? distCount[tier] : 0,
       dist,
+      distCount,
     };
   });
 }
