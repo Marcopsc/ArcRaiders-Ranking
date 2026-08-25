@@ -3,12 +3,18 @@ import { useEffect, useMemo, useState } from "react";
 import Nav from "@/components/Nav";
 import Avatar from "@/components/Avatar";
 import { fmtInt } from "@/lib/clientUtils";
-import { TIERS, TIER_COLOR, fmtAvg } from "@/lib/scoring";
+import { TIERS, TIER_COLOR, fmtAvg, compareByVotes, compareByAvg } from "@/lib/scoring";
+
+const MODES = {
+  votes: { field: "tierByVotes", cmp: compareByVotes, label: "Por tier mais votado" },
+  avg: { field: "tierByAvg", cmp: compareByAvg, label: "Por média" },
+};
 
 export default function ResultsPageClient({ slug, ranking }) {
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState(null);
   const [selected, setSelected] = useState(null);
+  const [mode, setMode] = useState("votes");
 
   useEffect(() => {
     let cancelled = false;
@@ -25,19 +31,22 @@ export default function ResultsPageClient({ slug, ranking }) {
     };
   }, [slug]);
 
+  const { field: tierField, cmp } = MODES[mode];
+
   const byTier = useMemo(() => {
     const m = {};
     TIERS.forEach((t) => (m[t] = []));
     if (data?.stats) {
       data.stats.forEach((row) => {
-        if (row.tier) m[row.tier].push(row);
+        const t = row[tierField];
+        if (t) m[t].push(row);
       });
-      TIERS.forEach((t) => m[t].sort((a, b) => b.avg - a.avg));
+      TIERS.forEach((t) => m[t].sort(cmp));
     }
     return m;
-  }, [data]);
+  }, [data, tierField, cmp]);
 
-  const noVotes = useMemo(() => (data?.stats || []).filter((r) => !r.tier), [data]);
+  const noVotes = useMemo(() => (data?.stats || []).filter((r) => !r.count), [data]);
 
   if (loading) {
     return (
@@ -73,6 +82,18 @@ export default function ResultsPageClient({ slug, ranking }) {
           <b className="tabular">{fmtInt(data.totalParticipants)}</b>
         </div>
 
+        <div className="mode-toggle">
+          {Object.entries(MODES).map(([key, m]) => (
+            <button
+              key={key}
+              className={`btn btn-sm ${mode === key ? "btn-primary" : "btn-ghost"}`}
+              onClick={() => setMode(key)}
+            >
+              {m.label}
+            </button>
+          ))}
+        </div>
+
         {TIERS.map((t) => (
           <div className="result-tier-row" key={t}>
             <div className="tier-label" style={{ background: TIER_COLOR[t] }}>
@@ -90,7 +111,9 @@ export default function ResultsPageClient({ slug, ranking }) {
                   <Avatar streamer={row.streamer} size={36} />
                   <span className="result-name">{row.streamer.nickname}</span>
                   <span className="result-votes">
-                    {fmtInt(row.count)} voto{row.count !== 1 ? "s" : ""}
+                    {mode === "votes"
+                      ? `${fmtInt(row.tierVotes)}/${fmtInt(row.count)} voto${row.count !== 1 ? "s" : ""} no tier`
+                      : `${fmtInt(row.count)} voto${row.count !== 1 ? "s" : ""}`}
                   </span>
                   <span className="result-avg tabular">{fmtAvg(row.avg)}</span>
                 </div>
@@ -131,13 +154,14 @@ export default function ResultsPageClient({ slug, ranking }) {
         )}
       </div>
 
-      {selected && <StreamerModal row={selected} onClose={() => setSelected(null)} />}
+      {selected && <StreamerModal row={selected} mode={mode} onClose={() => setSelected(null)} />}
     </>
   );
 }
 
-function StreamerModal({ row, onClose }) {
-  const { streamer, tier, avg, count, dist } = row;
+function StreamerModal({ row, mode, onClose }) {
+  const { streamer, avg, count, dist, tierVotes } = row;
+  const tier = mode === "avg" ? row.tierByAvg : row.tierByVotes;
   return (
     <div className="modal-backdrop" onClick={onClose}>
       <div className="modal" onClick={(e) => e.stopPropagation()}>
@@ -156,13 +180,19 @@ function StreamerModal({ row, onClose }) {
           )}
         </div>
         <div className="modal-stats">
+          {mode === "votes" && (
+            <div className="modal-stat">
+              <b className="tabular">{count ? tierVotes : "—"}</b>
+              <span>Votos no tier</span>
+            </div>
+          )}
+          <div className="modal-stat">
+            <b className="tabular">{count}</b>
+            <span>Votos totais</span>
+          </div>
           <div className="modal-stat">
             <b className="tabular">{count ? fmtAvg(avg) : "—"}</b>
             <span>Média</span>
-          </div>
-          <div className="modal-stat">
-            <b className="tabular">{count}</b>
-            <span>Votos</span>
           </div>
         </div>
         {count > 0 &&
