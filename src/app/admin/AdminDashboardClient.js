@@ -8,7 +8,12 @@ import ConfirmModal from "@/components/ConfirmModal";
 import StreamerForm from "@/components/StreamerForm";
 import { useToasts } from "@/lib/useToasts";
 import { fmtInt } from "@/lib/clientUtils";
-import { TIERS, TIER_COLOR, fmtAvg } from "@/lib/scoring";
+import { TIERS, TIER_COLOR, fmtAvg, compareByVotes, compareByAvg } from "@/lib/scoring";
+
+const RESULT_MODES = {
+  votes: { field: "tierByVotes", cmp: compareByVotes, label: "Por tier mais votado" },
+  avg: { field: "tierByAvg", cmp: compareByAvg, label: "Por média" },
+};
 
 async function jsonFetch(url, opts) {
   const res = await fetch(url, {
@@ -36,6 +41,7 @@ export default function AdminDashboardClient() {
   const [streamerForm, setStreamerForm] = useState(null); // {mode, streamer}
   const [confirm, setConfirm] = useState(null); // {title, body, confirmLabel, danger, onYes}
   const [busy, setBusy] = useState(false);
+  const [resultsMode, setResultsMode] = useState("votes");
 
   const selectedRanking = useMemo(
     () => rankings.find((r) => r.id === selectedRankingId) || null,
@@ -301,8 +307,12 @@ export default function AdminDashboardClient() {
       : `/ranking/${selectedRanking.slug}`
     : "";
 
+  const { field: resultsTierField, cmp: resultsCmp } = RESULT_MODES[resultsMode];
   const byTier = { };
-  TIERS.forEach((t) => (byTier[t] = (results?.stats || []).filter((r) => r.tier === t).sort((a, b) => b.avg - a.avg)));
+  TIERS.forEach(
+    (t) =>
+      (byTier[t] = (results?.stats || []).filter((r) => r[resultsTierField] === t).sort(resultsCmp))
+  );
 
   return (
     <>
@@ -503,6 +513,17 @@ export default function AdminDashboardClient() {
             ))}
 
             <div className="section-title">Ranking em tempo real</div>
+            <div className="mode-toggle">
+              {Object.entries(RESULT_MODES).map(([key, m]) => (
+                <button
+                  key={key}
+                  className={`btn btn-sm ${resultsMode === key ? "btn-primary" : "btn-ghost"}`}
+                  onClick={() => setResultsMode(key)}
+                >
+                  {m.label}
+                </button>
+              ))}
+            </div>
             {TIERS.map((t) => {
               const list = byTier[t];
               if (!list || list.length === 0) return null;
@@ -517,7 +538,11 @@ export default function AdminDashboardClient() {
                         <span className="result-rank">{i + 1}</span>
                         <Avatar streamer={{ nickname: row.streamer.nickname, avatarUrl: row.streamer.avatarUrl }} size={32} />
                         <span className="result-name">{row.streamer.nickname}</span>
-                        <span className="result-votes">{fmtInt(row.count)} votos</span>
+                        <span className="result-votes">
+                          {resultsMode === "votes"
+                            ? `${fmtInt(row.tierVotes)}/${fmtInt(row.count)} votos no tier`
+                            : `${fmtInt(row.count)} votos`}
+                        </span>
                         <span className="result-avg tabular">{fmtAvg(row.avg)}</span>
                       </div>
                     ))}
