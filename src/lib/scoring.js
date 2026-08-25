@@ -41,16 +41,27 @@ export function tierFromVotes(distCount) {
 }
 
 /**
- * Ordena duas linhas de estatística dentro do mesmo tier: primeiro por
- * quantidade de votos QUE O STREAMER RECEBEU NAQUELE TIER (o critério
- * "mais justo" pedido — quem tem mais gente confirmando aquele tier fica
- * na frente), depois por total de votos geral, depois pela média, e por
- * fim por nome, para desempate determinístico.
+ * Ordena duas linhas de estatística dentro do mesmo tier (modo "por tier
+ * mais votado"): primeiro por quantidade de votos QUE O STREAMER RECEBEU
+ * NAQUELE TIER (o critério "mais justo" — quem tem mais gente confirmando
+ * aquele tier fica na frente), depois por total de votos geral, depois
+ * pela média, e por fim por nome, para desempate determinístico.
  */
-export function compareStatsRows(a, b) {
+export function compareByVotes(a, b) {
   if (b.tierVotes !== a.tierVotes) return b.tierVotes - a.tierVotes;
   if (b.count !== a.count) return b.count - a.count;
   if (b.avg !== a.avg) return b.avg - a.avg;
+  return (a.streamer?.nickname || "").localeCompare(b.streamer?.nickname || "", "pt-BR");
+}
+
+/**
+ * Ordena duas linhas de estatística dentro do mesmo tier (modo "por
+ * média"): a forma original de rankear, pela nota média, com total de
+ * votos e nome como desempate.
+ */
+export function compareByAvg(a, b) {
+  if (b.avg !== a.avg) return b.avg - a.avg;
+  if (b.count !== a.count) return b.count - a.count;
   return (a.streamer?.nickname || "").localeCompare(b.streamer?.nickname || "", "pt-BR");
 }
 
@@ -69,6 +80,13 @@ export function fmtAvg(n) {
 /**
  * Given an array of votes ({streamerId, tier, score}) for a single ranking,
  * and the list of streamers in that ranking, compute per-streamer stats.
+ *
+ * Cada linha já sai com os DOIS critérios de tier calculados, para a tela
+ * poder alternar entre as duas visualizações sem precisar buscar de novo:
+ *  - tierByVotes: tier = o mais votado (moda) — o critério "mais justo".
+ *  - tierByAvg: tier = faixa de média (S+ 5,50–6,00, S 4,50–5,49, etc.) —
+ *    o critério original, por nota.
+ * `tier` fica como atalho para tierByVotes (visualização padrão).
  */
 export function computeStats(streamers, votes) {
   return streamers.map((streamer) => {
@@ -83,13 +101,16 @@ export function computeStats(streamers, votes) {
       distCount[t] = c;
       dist[t] = count ? Math.round((c / count) * 100) : 0;
     });
-    const tier = count ? tierFromVotes(distCount) : null;
+    const tierByVotes = count ? tierFromVotes(distCount) : null;
+    const tierByAvg = count ? tierFromAvg(avg) : null;
     return {
       streamer,
       count,
       avg,
-      tier,
-      tierVotes: tier ? distCount[tier] : 0,
+      tier: tierByVotes,
+      tierByVotes,
+      tierByAvg,
+      tierVotes: tierByVotes ? distCount[tierByVotes] : 0,
       dist,
       distCount,
     };
