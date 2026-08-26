@@ -30,7 +30,25 @@ export async function GET(_req, { params }) {
     })),
     votes
   );
-  const participants = await getParticipantsByVoter(ranking.id);
+  // Voto individual de cada participante (nome/e-mail + o tier que deu pra
+  // cada streamer), pro admin poder conferir "quem votou o quê" no painel.
+  const streamerById = new Map(streamers.map((s) => [s.id, s]));
+  const votesByVoter = new Map();
+  votes.forEach((v) => {
+    if (!votesByVoter.has(v.voter_id)) votesByVoter.set(v.voter_id, []);
+    const s = streamerById.get(v.streamer_id);
+    votesByVoter.get(v.voter_id).push({
+      streamerId: v.streamer_id,
+      nickname: s?.nickname || "(streamer removido da votação)",
+      avatarUrl: s?.avatar_url || "",
+      tier: v.tier,
+    });
+  });
+  const participantsBase = await getParticipantsByVoter(ranking.id);
+  const participants = participantsBase.map((p) => ({
+    ...p,
+    votes: votesByVoter.get(p.voter_id) || [],
+  }));
   const totalParticipants = new Set(votes.map((v) => v.voter_id)).size;
 
   return NextResponse.json({
