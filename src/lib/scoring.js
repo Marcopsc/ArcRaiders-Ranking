@@ -21,22 +21,31 @@ export function tierFromAvg(avg) {
 }
 
 /**
- * Tier "por média", em faixas RELATIVAS ao intervalo real das médias desta
- * votação — não em faixas fixas de 0 a 6 pontos. Com poucos votos as médias
- * quase sempre ficam concentradas no meio da escala (ninguém tira 6,00 nem
- * 1,00 puro), então as faixas fixas (`tierFromAvg`) deixavam quase todo
- * mundo preso em S/A/B e o S+ e o D praticamente vazios. Aqui, o streamer
- * com a MAIOR média da votação sempre cai em S+ e o de MENOR média sempre
- * cai em D, com o resto distribuído proporcionalmente entre os dois —
- * preenchendo o range inteiro do S+ ao D nesta votação específica.
- * Se todo mundo tem a mesma média (sem variação nenhuma pra comparar),
- * cai tudo em S (nota neutra), já que não existe "melhor" nem "pior".
+ * Tier "por média", por COLOCAÇÃO: ordena todo mundo (quem já tem voto)
+ * da maior pra menor média e divide em 6 grupos do tamanho mais igual
+ * possível — o grupo com as melhores médias vira S+, o com as piores vira
+ * D. Assim os 6 tiers ficam sempre preenchidos (contanto que haja pelo
+ * menos 6 streamers com voto), mesmo quando há "buracos" na distribuição
+ * real das notas — ao contrário de uma faixa fixa ou relativa ao range,
+ * que podia deixar um tier vazio se, por coincidência, ninguém tivesse
+ * média bem naquele intervalo.
+ * Empate na média é desempatado por total de votos e depois por nome, pra
+ * ficar determinístico (não mudar de posição sozinho a cada carregamento).
  */
-export function tierFromAvgRange(avg, minAvg, maxAvg) {
-  if (minAvg === maxAvg) return "S";
-  const normalized = (avg - minAvg) / (maxAvg - minAvg); // 0 = pior desta votação, 1 = melhor
-  const idx = Math.min(TIERS.length - 1, Math.max(0, Math.floor((1 - normalized) * TIERS.length)));
-  return TIERS[idx];
+export function assignTiersByPlacement(rows) {
+  const withVotes = rows.filter((r) => r.count > 0);
+  const sorted = [...withVotes].sort((a, b) => {
+    if (b.avg !== a.avg) return b.avg - a.avg;
+    if (b.count !== a.count) return b.count - a.count;
+    return (a.streamer?.nickname || "").localeCompare(b.streamer?.nickname || "", "pt-BR");
+  });
+  const n = sorted.length;
+  const tierById = new Map();
+  sorted.forEach((r, i) => {
+    const idx = Math.min(TIERS.length - 1, Math.floor((i * TIERS.length) / n));
+    tierById.set(r.streamer.id, TIERS[idx]);
+  });
+  return tierById;
 }
 
 /**
@@ -103,9 +112,9 @@ export function fmtAvg(n) {
  * Cada linha já sai com os DOIS critérios de tier calculados, para a tela
  * poder alternar entre as duas visualizações sem precisar buscar de novo:
  *  - tierByVotes: tier = o mais votado (moda) — o critério "mais justo".
- *  - tierByAvg: tier = faixa RELATIVA de média nesta votação (ver
- *    `tierFromAvgRange`) — preenche do S+ ao D proporcionalmente ao maior
- *    e menor média realmente alcançados, em vez de faixas fixas.
+ *  - tierByAvg: tier = por colocação na média (ver `assignTiersByPlacement`)
+ *    — os 6 tiers sempre ficam preenchidos, dividindo quem tem voto em 6
+ *    grupos iguais da maior pra menor média.
  * `tier` fica como atalho para tierByVotes (visualização padrão).
  */
 export function computeStats(streamers, votes) {
@@ -125,14 +134,10 @@ export function computeStats(streamers, votes) {
     return { streamer, count, avg, tierByVotes, dist, distCount };
   });
 
-  // Range real de médias entre quem já tem voto — streamers sem voto (avg=0)
-  // ficariam de fora, senão eles puxariam o "mínimo" pra baixo artificialmente.
-  const avgs = rows.filter((r) => r.count > 0).map((r) => r.avg);
-  const minAvg = avgs.length ? Math.min(...avgs) : 0;
-  const maxAvg = avgs.length ? Math.max(...avgs) : 0;
+  const tierByAvgMap = assignTiersByPlacement(rows);
 
   return rows.map((r) => {
-    const tierByAvg = r.count ? tierFromAvgRange(r.avg, minAvg, maxAvg) : null;
+    const tierByAvg = r.count ? tierByAvgMap.get(r.streamer.id) || null : null;
     return {
       streamer: r.streamer,
       count: r.count,
