@@ -42,6 +42,7 @@ export default function AdminDashboardClient() {
   const [confirm, setConfirm] = useState(null); // {title, body, confirmLabel, danger, onYes}
   const [busy, setBusy] = useState(false);
   const [resultsMode, setResultsMode] = useState("votes");
+  const [selectedVoter, setSelectedVoter] = useState(null);
 
   const selectedRanking = useMemo(
     () => rankings.find((r) => r.id === selectedRankingId) || null,
@@ -556,7 +557,12 @@ export default function AdminDashboardClient() {
               <div className="empty-note">Ninguém votou ainda.</div>
             )}
             {results?.participants?.map((p) => (
-              <div className="streamer-row" key={p.voter_id}>
+              <div
+                className="streamer-row"
+                key={p.voter_id}
+                style={{ cursor: "pointer" }}
+                onClick={() => setSelectedVoter(p)}
+              >
                 <div className="info">
                   <div className="nm">{p.name || "(sem nome)"}</div>
                   <div className="meta">{p.email || "—"}</div>
@@ -571,6 +577,8 @@ export default function AdminDashboardClient() {
           <div className="empty-note">Crie uma votação para começar.</div>
         )}
       </div>
+
+      {selectedVoter && <VoterModal voter={selectedVoter} onClose={() => setSelectedVoter(null)} />}
 
       {confirm && (
         <ConfirmModal
@@ -588,5 +596,42 @@ export default function AdminDashboardClient() {
       )}
       <ToastHost toasts={toasts} />
     </>
+  );
+}
+
+function VoterModal({ voter, onClose }) {
+  const votes = [...(voter.votes || [])].sort((a, b) => {
+    const ia = TIERS.indexOf(a.tier);
+    const ib = TIERS.indexOf(b.tier);
+    if (ia !== ib) return ia - ib;
+    return (a.nickname || "").localeCompare(b.nickname || "", "pt-BR");
+  });
+  return (
+    <div className="modal-backdrop" onClick={onClose}>
+      <div className="modal" onClick={(e) => e.stopPropagation()}>
+        <button className="btn btn-ghost btn-sm modal-close" onClick={onClose}>
+          ✕
+        </button>
+        <div className="modal-head">
+          <div className="modal-name">{voter.name || "(sem nome)"}</div>
+          <span className="badge">{voter.email || "—"}</span>
+        </div>
+        <div className="modal-stats">
+          <div className="modal-stat">
+            <b className="tabular">{votes.length}</b>
+            <span>Votos dados</span>
+          </div>
+        </div>
+        {votes.length === 0 && <div className="empty-note">Nenhum voto registrado.</div>}
+        {votes.map((v) => (
+          <div className="dist-row" key={v.streamerId}>
+            <span className="dist-tier" style={{ color: TIER_COLOR[v.tier] }}>
+              {v.tier}
+            </span>
+            <span style={{ flex: 1 }}>{v.nickname}</span>
+          </div>
+        ))}
+      </div>
+    </div>
   );
 }
